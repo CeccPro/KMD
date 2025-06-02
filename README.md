@@ -2,7 +2,10 @@
 
 KMD (Komodo Package Manager) es un gestor de paquetes liviano y extensible diseñado para sistemas Windows. Su propósito es facilitar la instalación, desinstalación y actualización de software empaquetado en archivos `.zip` con estructura predefinida.
 
-Los paquetes son gestionados mediante un archivo `index.json` alojado en GitHub Pages (u otro servidor estático), lo que permite a los desarrolladores distribuir sus aplicaciones de forma sencilla y sin necesidad de servidores complejos.
+Los paquetes son gestionados mediante un archivo `index.json` alojado en GitHub Pages, lo que permite a los desarrolladores distribuir sus aplicaciones de forma sencilla y sin necesidad de servidores complejos.
+
+🌐 URL del index:  
+https://ceccpro.github.io/kmd.db/index.json
 
 ### Características
 
