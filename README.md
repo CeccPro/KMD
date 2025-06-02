@@ -5,7 +5,7 @@ KMD (Komodo Package Manager) es un gestor de paquetes liviano y extensible dise�
 Los paquetes son gestionados mediante un archivo `index.json` alojado en GitHub Pages, lo que permite a los desarrolladores distribuir sus aplicaciones de forma sencilla y sin necesidad de servidores complejos.
 
 🌐 URL del index:  
-https://ceccpro.github.io/kmd.db/index.json
+https://ceccpro.github.io/kmd-db/index.json
 
 ### Características
 
@@ -19,3 +19,31 @@ https://ceccpro.github.io/kmd.db/index.json
 Los paquetes utilizan el formato: `Autor.NombrePaquete@Versión`, lo que permite un control preciso de versiones y una organización modular.
 
 > Ejemplo: `CeccPro.testApp@1.0.0`
+
+## 🤝 Contribuciones
+
+¿Quieres meter paquetes nuevos o mejorar el repositorio? ¡Hazlo directo aquí!
+
+Solo sigue estos pasos:
+
+1. *Clona el repositorio*:
+```bash
+git clone https://github.com/ceccpro/kmd-db.git
+cd kmd
+```
+
+2. *Crea una nueva rama para tus cambios*:
+```bash
+git checkout -b mi-paquete
+```
+
+3. *Agrega o modifica los archivos que quieras (por ejemplo, actualiza index.json para agregar paquetes nuevos).*
+   
+4. *Haz commit y push a tu rama:*
+```bash
+git add .
+git commit -m "Agrego paquete nuevo: nombrePaquete"
+git push origin mi-paquete
+```
+
+5. *Crea un Pull Request desde tu rama hacia main en GitHub para que revisemos tus cambios.*
