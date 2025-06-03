@@ -1,0 +1,12 @@
+---- Changelog ----
+
+-- release 1.0.1a (06/02/2025) --
+* Bugs fixed
+* Code optimizations
+
+-- release 1.0.1 (06/01/2025) --
+* Bugs fixed
+* Help command added
+
+-- release 1.0.0 (06/01/2025) --
+* First version of KMD Package Manager
