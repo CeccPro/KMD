@@ -1,5 +1,8 @@
 ---- Changelog ----
 
+-- release 1.1.2 (06/02/2025) -- 
+* Better system of dependencies (Now it supports versions)
+
 -- release 1.1.1 (06/02/2025) --
 * Bugs Fixed
 * Progress bar on download added!
