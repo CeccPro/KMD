@@ -1,19 +1,4 @@
 ---- Changelog ----
 
--- release 1.1.0 (06/02/2025) --
-* The API format has been modified to improve compatibility between versions
-* Bugs Fixed
-* Uninstall script has been added! (A script that runs just before uninstalling a package)
-* list-versions command has been added!
-(I'll be uploading new packages these days to extend the repository)
-
--- release 1.0.1a (06/02/2025) --
-* Bugs fixed
-* Code optimizations
-
--- release 1.0.1 (06/01/2025) --
-* Bugs fixed
-* Help command added
-
 -- release 1.0.0 (06/01/2025) --
 * First version of KMD Package Manager
