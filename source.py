@@ -426,11 +426,24 @@ def list_installed_packages():
     for pkg in installed['installed']:
         print(f"- {pkg['id']}: {pkg.get('description', 'Sin descripción')}")
 
+def get_usage():
+    return '''Comandos disponibles:
+    install [ID]       - Instala un paquete
+    search [nombre]    - Busca paquetes
+    list-all           - Lista todos los paquetes
+    uninstall [nombre] - Desinstala un paquete
+    remove [nombre]    - Alias para uninstall
+    update-all         - Actualiza todos los paquetes
+    update [ID]        - Actualiza un paquete
+    list-installed     - Lista todos los paquetes instalados
+    help               - Muestra este dialogo de ayuda
+    '''
+
 
 # === Ejemplo de uso ===
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='KMD - Gestor de paquetes de CeccPro 😎')
+    parser = argparse.ArgumentParser(description='KMD - Gestor de paquetes')
     parser.add_argument('command', help='Comando: install, search, list-all, uninstall, remove, update')
     parser.add_argument('value', nargs='?', help='Valor para el comando (ID o nombre del paquete)')
     args = parser.parse_args()
@@ -450,15 +463,9 @@ if __name__ == '__main__':
             update_package(args.value)
         elif args.command == 'update-all':
             update_all_packages()
+        elif args.command in ['help', '-h', '--help']:
+            print(get_usage())
         else:
-            print("Uso inválido. Comandos disponibles:\n"
-                  "  install [ID]       - Instala un paquete\n"
-                  "  search [nombre]    - Busca paquetes\n"
-                  "  list-all           - Lista todos los paquetes\n"
-                  "  uninstall [nombre] - Desinstala un paquete\n"
-                  "  remove [nombre]    - Alias para uninstall\n"
-                  "  update-all             - Actualiza todos los paquetes\n"
-                  "  update [ID]             - Actualiza un paquete\n"
-                  "  list-installed             - Lista todos los paquetes instalados")
+            print("Uso inválido.", get_usage())
     except Exception as e:
         print(f"Error: {e}")
