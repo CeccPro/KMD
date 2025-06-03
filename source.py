@@ -125,13 +125,22 @@ def extract_and_validate_manifest(zip_path):
 
 def install_dependencies(manifest):
     for dep in manifest.get('dependencies', []):
-        print(f"Instalando dependencia: {dep}")
-        installCode = install_package(dep)
-        if installCode == "OK":
-            continue
-        else:
+        pkg_id = dep.get("id")
+        pkg_version = dep.get("version")
+
+        if not pkg_id:
+            print("Dependencia inválida, falta el ID.")
             return "ERROR"
+        
+        print(f"Instalando dependencia: {pkg_id} (versión: {pkg_version or 'latest'})")
+        install_code = install_package(pkg_id, pkg_version)
+
+        if install_code != "OK":
+            print(f"Error al instalar dependencia: {pkg_id}")
+            return "ERROR"
+
     return "OK"
+
 
 def extract_package(zip_path, package_name):
     dest_path = os.path.join(INSTALL_PATH, package_name)
