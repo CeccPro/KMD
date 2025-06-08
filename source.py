@@ -74,7 +74,8 @@ def writeLog(status, text, newInstance=False):
         f.write(log_entry)
 
 def run_as_admin():
-    # Vuelve a ejecutar el script como 
+    # No tocar esto a menos que sepas qué haces. Estuve batallando con bugs más de media hora.
+    # Vuelve a ejecutar el script como admin
     print("Se necesitan permisos de administrador. Relanzando KMD...")
     args = sys.argv[1:]
     if len(args) > 0 and os.path.basename(sys.argv[0]).split('.')[0].lower() == args[0].lower():
@@ -187,8 +188,13 @@ def verify_hash(file_path, expected_hash):
 
 def extract_and_validate_manifest(zip_path):
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        with zip_ref.open('manifest.json') as manifest_file:
-            manifest = json.load(manifest_file)
+        try:
+            with zip_ref.open('manifest.json') as manifest_file:
+                manifest = json.load(manifest_file)
+        except json.JSONDecodeError:
+            writeLog("ERROR", "El archivo manifest.json está corrupto o malformado. Abortando instalación...")
+            print(f"Error: Ha ocurrido un error mientras se abría manifest.json")
+            return "ERROR"
 
     index = get_index()
     # Buscar paquete por author y name
@@ -209,6 +215,61 @@ def extract_and_validate_manifest(zip_path):
         raise Exception("La descripción del manifest y el índice no coinciden")
 
     return manifest
+
+def who_depends(package_id, silent=False):
+    try:
+        if not isinstance(package_id, str) or "@" not in package_id:
+            writeLog("ERROR", f"ID de paquete inválido: {package_id}")
+            print("Error: El ID del paquete debe ser una cadena válida en formato 'autor@nombre'.")
+            return []
+
+        installed_file = os.path.join(INSTALL_PATH, 'installed.json')
+        if not os.path.exists(installed_file):
+            writeLog("WARNING", "No se encontró el archivo del registro")
+            print("No hay paquetes instalados.")
+            return []
+
+        try:
+            with open(installed_file, 'r') as f:
+                installed_data = json.load(f)
+        except json.JSONDecodeError:
+            writeLog("ERROR", "El archivo installed.json está corrupto o malformado")
+            print("Error: El archivo de registro está corrupto. No se puede continuar.")
+            return []
+
+        installed = installed_data.get('installed', [])
+        if not isinstance(installed, list):
+            writeLog("ERROR", "El campo 'installed' no es una lista")
+            print("Error: Formato incorrecto en el archivo de registro.")
+            return []
+
+        dependents = []
+        for p in installed:
+            deps = p.get('dependencies', [])
+            if not isinstance(deps, list):
+                continue  # Ignora paquetes con dependencias mal formateadas
+
+            for dep in deps:
+                if not isinstance(dep, dict):
+                    continue
+                if dep.get('id') == package_id:
+                    dependents.append(f"{p.get('author', 'desconocido')}@{p.get('name', 'desconocido')}")
+                    break  # Si ya depende, no hace falta seguir revisando
+
+        writeLog("INFO", f"Se encontró que {len(dependents)} paquetes dependen de {package_id}")
+
+        if dependents:
+            print(f"Los siguientes paquetes dependen de '{package_id}':")
+            for d in dependents:
+                print(f"  - {d}")
+        else:
+            print(f"Nadie depende de '{package_id}'.")
+        return dependents
+
+    except Exception as e:
+        writeLog("ERROR", f"Error inesperado en who_depends: {e}")
+        print(f"Error inesperado: {e}")
+        return []
 
 def install_dependencies(manifest):
     for dep in manifest.get('dependencies', []):
@@ -270,28 +331,103 @@ def run_uninstall(manifest, package_path):
             writeLog("ERROR", f"Script {script} no encontrado en {package_path}")
             print(f"Script {script} no encontrado en {package_path}")
 
+def autoremove_unused_packages():
+    installed_file = os.path.join(INSTALL_PATH, 'installed.json')
+
+    if not os.path.exists(installed_file):
+        writeLog("INFO", "No se encuentra el archivo del registro.")
+        print("No hay paquetes instalados.")
+        return
+
+    try:
+        with open(installed_file, 'r') as f:
+            installed = json.load(f)
+    except json.JSONDecodeError:
+            writeLog("ERROR", "El archivo installed.json está corrupto o malformado.")
+            raise Exception(f"Error: Ha ocurrido un error mientras se leía el registro.")
+
+    all_ids = [f"{p['author']}@{p['name']}" for p in installed['installed']]
+    removed_any = False
+    changes = True  # Para seguir limpiando en cascada
+
+    while changes:
+        changes = False
+        to_remove = []
+
+        for pkg in installed['installed']:
+            pkg_id = f"{pkg['author']}@{pkg['name']}"
+            dependents = pkg.get('dependents', [])
+
+            # Si tiene dependents pero ninguno de ellos existe, marcar para borrar
+            if dependents and all(dep not in all_ids for dep in dependents):
+                to_remove.append(pkg_id)
+
+        if to_remove:
+            for pkg_id in to_remove:
+                uninstall_package(pkg_id)  # Aquí llamas a tu función de desinstalación
+                writeLog("INFO", f"Se eliminó el paquete huérfano: {pkg_id}")
+                print(f"Se eliminó el paquete huérfano: {pkg_id}")
+                removed_any = True
+            # Recargar lista después de cada tanda de desinstalaciones
+            try:
+                with open(installed_file, 'r') as f:
+                    installed = json.load(f)
+            except json.JSONDecodeError:
+                writeLog("ERROR", "El archivo installed.json está corrupto o malformado. Abortando instalación...")
+                raise Exception(f"Error: Ha ocurrido un error mientras se leía el registro.")
+            all_ids = [f"{p['author']}@{p['name']}" for p in installed['installed']]
+            changes = True  # Repetir para limpiar en cascada
+
+    if not removed_any:
+        print("No hay paquetes huérfanos para eliminar.")
+        writeLog("INFO", "No hay paquetes huérfanos para eliminar.")
+
+
 def register_package(manifest):
     os.makedirs(INSTALL_PATH, exist_ok=True)
     installed_file = os.path.join(INSTALL_PATH, 'installed.json')
-    
+
     if os.path.exists(installed_file):
-        with open(installed_file, 'r') as f:
-            installed = json.load(f)
+        try:
+            with open(installed_file, 'r') as f:
+                installed = json.load(f)
+        except json.JSONDecodeError:
+            writeLog("ERROR", "El archivo installed.json está corrupto o malformado")
+            print(f"Error: Ha ocurrido un error mientras se instalaba {manifest['author']}@{manifest['name']}.")
+            return "ERROR"
     else:
         installed = {"installed": []}
 
     # Construir el ID del paquete
     package_id = f"{manifest['author']}@{manifest['name']}"
 
-    # Reemplaza si ya estaba instalado
+    # Actualizar dependents en cada dependencia (si existen)
+    if 'dependencies' in manifest:
+        for dep in manifest['dependencies']:
+            dep_id = dep['id']  # El ID de la dependencia, tipo "CeccPro@testLib"
+            for pkg in installed['installed']:
+                pkg_id = f"{pkg['author']}@{pkg['name']}"
+                if pkg_id == dep_id:
+                    if 'dependents' not in pkg:
+                        pkg['dependents'] = []
+                    if package_id not in pkg['dependents']:
+                        pkg['dependents'].append(package_id)
+
+    # Asegurar que el paquete tenga al menos el campo dependents vacío
+    if 'dependents' not in manifest:
+        manifest['dependents'] = []
+
+    # Reemplazar si ya estaba
     installed['installed'] = [p for p in installed['installed'] if f"{p['author']}@{p['name']}" != package_id]
     installed['installed'].append(manifest)
 
+    # Guardar cambios
     with open(installed_file, 'w') as f:
         json.dump(installed, f, indent=4)
 
     writeLog("OK", f"El paquete {package_id} se registró correctamente")
     print(f"Paquete {package_id} registrado correctamente")
+    return "OK"
 
 def list_all_packages():
     index = get_index()
@@ -306,12 +442,17 @@ def install_package(package_id, version=None):
     installed_file = os.path.join(INSTALL_PATH, 'installed.json')
     if os.path.exists(installed_file):
         writeLog("OK", "La lista de paquetes instalados existe.")
-        with open(installed_file, 'r') as f:
-            installed = json.load(f).get('installed', [])
-            if any(f"{p['author']}@{p['name']}" == package_id for p in installed):
-                writeLog("OK", f"El paquete {package_id} ya está instalado. Omitiendo instalación")
-                print(f"El paquete {package_id} ya está instalado. Omitiendo instalación.")
-                return "OK"
+        try:
+            with open(installed_file, 'r') as f:
+                installed = json.load(f).get('installed', [])
+        except json.JSONDecodeError:
+            writeLog("ERROR", "El archivo installed.json está corrupto o malformado. Abortando instalación...")
+            print(f"Error: Ha ocurrido un error mientras se instalaba {package_id}.")
+            return "ERROR"
+        if any(f"{p['author']}@{p['name']}" == package_id for p in installed):
+            writeLog("OK", f"El paquete {package_id} ya está instalado. Omitiendo instalación")
+            print(f"El paquete {package_id} ya está instalado. Omitiendo instalación.")
+            return "OK"
 
     zip_path = None
     try:
@@ -371,10 +512,14 @@ def install_package(package_id, version=None):
 
         # Extraer y validar manifest
         manifest = extract_and_validate_manifest(zip_path)
+        if manifest == "ERROR":
+            writeLog("ERROR", f"Ha ocurrido un error mientras se instalaba {package_id}. Abortando...")
+            raise Exception(f"Ha ocurrido un error mientras se instalaba {package_id}. Abortando...")
 
         # Instalar dependencias
         writeLog("INFO", "Instalando dependencias...")
-        if install_dependencies(manifest) != "OK":
+        returnCode = install_dependencies(manifest)
+        if returnCode != "OK":
             writeLog("ERROR", "Error al instalar dependencias. Abortando instalación.")
             raise Exception("Error al instalar dependencias. Abortando instalación.")
 
@@ -386,7 +531,10 @@ def install_package(package_id, version=None):
         run_postinstall(manifest, package_path)
 
         # Registrar el paquete como instalado
-        register_package(manifest)
+        regCode = register_package(manifest)
+        if regCode != "OK":
+            writeLog("ERROR", "Ha ocurrido un error mientras se registraba el paquete")
+            print(f"Ha ocurrido un error mientras se instalaba {package_id}")
 
         writeLog("OK", f"El paquete {package_id} se ha instalado correctamente!")
         print(f"Paquete {package_id}@{selected_version['versionName']} instalado con éxito")
@@ -398,6 +546,10 @@ def install_package(package_id, version=None):
         if not isadmin:
             writeLog("ERROR", "No se pudo ejecutar KMD con permisos de administrador")
             raise Exception("No se pudo ejecutar KMD con permisos de administrador")
+        
+    except KeyboardInterrupt:
+        writeLog("ERROR", f"El usuario interrumpió la instalación con KeyboardInterrupt")
+        print("Abortando instalalción...")
 
     except Exception as e:
         writeLog("ERROR", f"Error durante la instalación de {package_id}: {e}")
@@ -413,7 +565,6 @@ def install_package(package_id, version=None):
 def uninstall_package(package_id):
     writeLog("INFO", f"Desinstalando {package_id}")
 
-    # Verificar si KMD tiene permisos de admin
     if ctypes.windll.shell32.IsUserAnAdmin() == 1:
         writeLog("OK", "KMD tiene permisos de admin")
     else:
@@ -424,23 +575,43 @@ def uninstall_package(package_id):
         writeLog("WARNING", "No se encontró el archivo del registro")
         print("No hay paquetes instalados.")
         return
-    with open(installed_file, 'r') as f:
-        installed_data = json.load(f)
+    try:
+        with open(installed_file, 'r') as f:
+            installed_data = json.load(f)
+    except json.JSONDecodeError:
+            writeLog("ERROR", "El archivo installed.json está corrupto o malformado. Abortando instalación...")
+            print(f"Error: Ha ocurrido un error mientras se leía el registro")
+            return
     installed = installed_data['installed']
 
     writeLog("INFO", "Buscando paquete en el registro...")
-    # Buscar paquete por ID
     package = next((p for p in installed if f"{p['author']}@{p['name']}" == package_id), None)
     if not package:
         writeLog("ERROR", f"No se encontró el paquete '{package_id}' en el registro.")
         print(f"No se encontró el paquete con ID '{package_id}' para desinstalar.")
         return
 
+    # Verificar si alguien más depende de este paquete
+    for p in installed:
+        deps = p.get('dependencies', [])
+        for dep in deps:
+            if dep.get('id') == package_id:
+                depender_id = f"{p['author']}@{p['name']}"
+                writeLog("WARNING", f"{depender_id} depende de {package_id}. Mostrando advertencia...")
+                print(f"Advertencia: '{depender_id}' depende de '{package_id}'. Desinstalarlo puede causar errores.")
+                print("¿Aún quieres desinstalarlo? (S/N)")
+                userInput = input(">")
+                if not userInput.lower() in ['s', 'y']:
+                    writeLog("INFO", "Se canceló la desinstalación.")
+                    print("Se canceló la desinstalación.")
+                    return
+                else:
+                    writeLog("WARNING", "Se continuó con la desinstalación. Esto puede ocasionar errores.")
+                break
+
     package_folder = os.path.join(INSTALL_PATH, package['name'])
 
-    # Comprobar si se necesitan permisos de admin para la acción
     try:
-        # Archivo temporal
         test_path = os.path.join(package_folder, "__perm_check.tmp")
         with open(test_path, 'w') as f:
             f.write("test")
@@ -448,18 +619,20 @@ def uninstall_package(package_id):
 
     except PermissionError:
         writeLog("WARNING", "KMD no tiene permisos de admin. Relanzando...")
-        # Verificar y ejecutar como admin
         isadmin = run_as_admin()
         if not isadmin:
             writeLog("ERROR", "No se pudo ejecutar KMD con permisos de administrador")
             raise Exception("No se pudo ejecutar KMD con permisos de administrador")
 
-    # Leer manifest para verificar si tiene script de desinstalación
     writeLog("INFO", "Verificando si hay script de desinstalación")
     manifest_path = os.path.join(package_folder, 'manifest.json')
     if os.path.exists(manifest_path):
-        with open(manifest_path, 'r') as mf:
-            manifest = json.load(mf)
+        try:
+            with open(manifest_path, 'r') as mf:
+                manifest = json.load(mf)
+        except json.JSONDecodeError:
+            writeLog("ERROR", "El archivo manifest.json está corrupto o malformado. Abortando instalación...")
+            print(f"Error: Ha ocurrido un error mientras se instalaba {package_id}.")
         if 'uninstallScript' in manifest and manifest['uninstallScript'].strip():
             writeLog("INFO", f"Ejecutando script de desinstalación: {manifest['uninstallScript']}")
             print(f"Ejecutando script de desinstalación: {manifest['uninstallScript']}")
@@ -474,14 +647,12 @@ def uninstall_package(package_id):
         writeLog("WARNING", "No se encontró el manifiesto del paquete a desinstalar")
 
     writeLog("INFO", "Eliminando carpeta del paquete")
-    # Borrar carpeta del paquete
     if os.path.exists(package_folder):
         try:
             shutil.rmtree(package_folder)
         except Exception as e:
-            print(f"Ha ocurrido un error durante la desisntalación: {e}")
+            print(f"Ha ocurrido un error durante la desinstalación: {e}")
 
-    # Actualizar installed.json
     installed_data['installed'] = [p for p in installed if f"{p['author']}@{p['name']}" != package_id]
     with open(installed_file, 'w') as f:
         json.dump(installed_data, f, indent=4)
@@ -508,6 +679,10 @@ def repair_package(package_id):
 
     # Buscar paquete instalado
     installed = get_installed_packages()
+    if installed == "ERROR":
+        writeLog("ERROR", "get_installed_packages devolvió un flag de error.")
+        print("Error: Ha ocurrido un error. Abortando...")
+        return
     installed_pkg = next((p for p in installed if p['author'] == author and p['name'] == pkg_name), None)
 
     if installed_pkg:
@@ -543,6 +718,10 @@ def update_package(package_id):
 
     # Buscar paquete instalado (usamos author y name)
     installed = get_installed_packages()
+    if installed == "ERROR":
+        writeLog("ERROR", "get_installed_packages devolvió un flag de error.")
+        print("Error: Ha ocurrido un error. Abortando...")
+        return
     installed_pkg = next((p for p in installed if p['author'] == author and p['name'] == pkg_name), None)
 
     # Obtener versión más reciente
@@ -579,13 +758,18 @@ def update_all_packages():
         print("No hay paquetes instalados para actualizar.")
         return
 
-    with open(installed_file, 'r') as f:
-        installed_data = json.load(f)
+    try:
+        with open(installed_file, 'r') as f:
+            installed_data = json.load(f)
+    except json.JSONDecodeError:
+        writeLog("ERROR", "El archivo installed.json está corrupto o malformado. Abortando instalación...")
+        print(f"Error: Ha ocurrido un error mientras se instalaba {package_id}.")
+        return
 
     installed_list = installed_data.get('installed', [])
     if not installed_list:
         writeLog("ERROR", "No hay paquetes instalados para actualizar.")
-        print("ERROR", "No hay paquetes instalados para actualizar.")
+        print("No hay paquetes instalados para actualizar.")
         return
 
     index = get_index()
@@ -627,8 +811,13 @@ def update_all_packages():
 def get_installed_packages():
     installed_file = os.path.join(INSTALL_PATH, 'installed.json')
     if os.path.exists(installed_file):
-        with open(installed_file, 'r') as f:
-            data = json.load(f)
+        try:
+            with open(installed_file, 'r') as f:
+                data = json.load(f)
+        except json.JSONDecodeError:
+            writeLog("ERROR", "El archivo installed.json está corrupto o malformado. Abortando instalación...")
+            print(f"Error: Ha ocurrido un error mientras se leía el registro.")
+            return "ERROR"
         return data.get('installed', [])
     return []
 
@@ -639,8 +828,13 @@ def list_installed_packages():
         print("No hay< paquetes instalados aún.")
         return
 
-    with open(installed_file, 'r') as f:
-        installed_data = json.load(f)
+    try:
+        with open(installed_file, 'r') as f:
+            installed_data = json.load(f)
+    except json.JSONDecodeError:
+            writeLog("ERROR", "El archivo installed.json está corrupto o malformado. Abortando instalación...")
+            print(f"Error: Ha ocurrido un error mientras se leía el registro.")
+            return "ERROR"
 
     installed = installed_data.get('installed', [])
     if not installed:
@@ -704,6 +898,8 @@ def get_usage():
     list-installed          - Lista todos los paquetes instalados
     help                    - Muestra este dialogo de ayuda
     version                 - Muestra la versión instalada de KMD
+    autoremove              - Elimina las dependencias huerfanas
+    who-depends [ID]        - Muestra cuantos paquetes dependen de otro paquete
     '''
 
 def main():
@@ -737,6 +933,14 @@ def main():
             writeLog("INFO", f"Reparando instalación de {args.value}")
             repair_package(args.value)
 
+        elif args.command == 'who-depends' and args.value:
+            writeLog("INFO", f"Verificando paquetes que dependen de {args.value}")
+            who_depends(args.value)
+
+        elif args.command == 'autoremove':
+            writeLog("INFO", f"Eliminando dependencias huerfanas...")
+            autoremove_unused_packages()
+
         elif args.command == 'list-installed':
             writeLog("INFO", f"Listando paquetes instalados...")
             list_installed_packages()
@@ -768,6 +972,7 @@ def main():
         else:
             writeLog("ERROR", f"Comando '{args.command} {args.value} {args.extraArgs}' no reconocido. Imprimiendo ayuda")
             print("Uso inválido.", get_usage())
+
     except Exception as e:
         print(f"Error: {e}")
 
