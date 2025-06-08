@@ -1,5 +1,13 @@
 ---- Changelog ----
 
+-- release 1.1.3 (06/07/2025) --
+* Version command has been added
+* Repair command has been added
+* Logs system added
+* Log rolling system added
+* Now when KMD needs administrator permissions, it automatically restarts itself with administrator permissions.
+* Bugs solved
+
 -- release 1.1.2 (06/02/2025) -- 
 * Better system of dependencies (Now it supports versions)
 
