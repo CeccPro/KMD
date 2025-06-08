@@ -18,7 +18,7 @@ username = os.getlogin()
 # -- Configuración -- 
 GITHUB_INDEX_URL = f"https://ceccpro.github.io/kmd-db/index.json?cb={int(time.time())}"
 INSTALL_PATH = r'C:\Program Files\KMD\packages'
-KMD_VERSION = "1.1.3"
+KMD_VERSION = "1.1.4"
 LOG_PATH = rf'C:\users\{username}\appdata\local\kmd'
 
 def compressLog():
