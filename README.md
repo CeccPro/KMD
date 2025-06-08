@@ -16,9 +16,9 @@ https://ceccpro.github.io/kmd-db/index.json
 - 📝 Registro local de paquetes instalados
 
 ### Formato de ID
-Los paquetes utilizan el formato: `Autor.NombrePaquete@Versión`, lo que permite un control preciso de versiones y una organización modular.
+Los paquetes utilizan el formato: `Autor@NombrePaquete`, lo que permite un control preciso de versiones y una organización modular.
 
-> Ejemplo: `CeccPro.testApp@1.0.0`
+> Ejemplo: `CeccPro@testApp`
 
 ## 🤝 Contribuciones
 
